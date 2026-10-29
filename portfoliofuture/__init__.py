@@ -2,10 +2,14 @@
 
 Every function performs a live HTTP call to ``https://portfoliofuture.com/api/*``
 and returns parsed, typed results. No data is bundled or fabricated.
+
+Public verbs are **opportunity** and **evaluate opportunity** (never
+"substitution"): find which funds a given fund can replace, and check whether
+two funds are comparable and which is better.
 """
 
 from .client import DEFAULT_BASE_URL, PortfolioFutureClient
-from .models import Decomposition, Peer, PeerCloud
+from .models import Comparison, Decomposition, Holders, Peer, PeerCloud
 from .exceptions import (
     PortfolioFutureError,
     PortfolioFutureAPIError,
@@ -15,8 +19,10 @@ from .api import (
     get_framework_info,
     get_decomposition,
     get_peers,
+    get_opportunity,
+    evaluate_opportunity,
     get_returns,
-    get_substitutes,
+    get_holders,
     get_fund_url,
 )
 
@@ -29,13 +35,17 @@ __all__ = [
     "Decomposition",
     "PeerCloud",
     "Peer",
+    "Comparison",
+    "Holders",
     "PortfolioFutureError",
     "PortfolioFutureAPIError",
     "PortfolioFutureNetworkError",
     "get_framework_info",
     "get_decomposition",
     "get_peers",
+    "get_opportunity",
+    "evaluate_opportunity",
     "get_returns",
-    "get_substitutes",
+    "get_holders",
     "get_fund_url",
 ]

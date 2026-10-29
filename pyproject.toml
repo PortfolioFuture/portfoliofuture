@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "portfoliofuture"
 version = "0.1.0"
-description = "Python client for PortfolioFuture's public fund-substitution and investable return-decomposition API — answers 'what is this ETF?' and 'should I buy this fund?' with R², tracking error, and PIR"
+description = "Official, dependency-free Python client for PortfolioFuture's public fund-opportunity and investable return-decomposition API — answers 'what is this ETF?' and 'should I buy this fund?' with R², tracking error, PIR, and SEC 13F ownership"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
@@ -15,8 +15,8 @@ authors = [
 keywords = [
   "etf",
   "mutual-funds",
+  "fund-opportunity",
   "fund-substitution",
-  "fund-replacement",
   "return-decomposition",
   "investable-return",
   "portfolio-management",

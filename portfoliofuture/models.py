@@ -166,3 +166,103 @@ class PeerCloud:
             target_fund=d.get("target_fund") or {},
             peers=peers,
         )
+
+
+@dataclass
+class Comparison:
+    """Pairwise fund comparison — the *evaluate opportunity* call.
+
+    Built from ``/api/etf-compare/<left>/<right>``. Reports whether the two
+    funds are empirically comparable (high return similarity) and, when they
+    are, which carries the lower cost — the usual net-return differentiator
+    for near-identical trackers.
+    """
+
+    left_ticker: str = ""
+    right_ticker: str = ""
+    left_name: str = ""
+    right_name: str = ""
+    similarity: Optional[float] = None
+    annual_correlation: Optional[float] = None
+    coverage: Optional[float] = None
+    tracking_error_ann: Optional[float] = None
+    pir: Optional[float] = None
+    comparable: bool = False
+    better_ticker: Optional[str] = None
+    better_reason: Optional[str] = None
+    as_of: Optional[str] = None
+    raw: dict = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Comparison":
+        left = d.get("left") or {}
+        right = d.get("right") or {}
+        rel = d.get("relation") or {}
+        similarity = rel.get("similarity")
+        left_er = left.get("expense_ratio")
+        right_er = right.get("expense_ratio")
+        comparable = (similarity or 0) >= 0.95
+        better = None
+        reason = None
+        if comparable and left_er is not None and right_er is not None:
+            if left_er < right_er:
+                better = left.get("ticker")
+                reason = f"lower expense ratio ({left_er:.4f}% vs {right_er:.4f}%)"
+            elif right_er < left_er:
+                better = right.get("ticker")
+                reason = f"lower expense ratio ({right_er:.4f}% vs {left_er:.4f}%)"
+            else:
+                reason = "identical expense ratio"
+        return cls(
+            left_ticker=left.get("ticker", ""),
+            right_ticker=right.get("ticker", ""),
+            left_name=left.get("fund_name", ""),
+            right_name=right.get("fund_name", ""),
+            similarity=similarity,
+            annual_correlation=rel.get("annual_correlation"),
+            coverage=rel.get("coverage"),
+            tracking_error_ann=rel.get("tracking_error_ann"),
+            pir=rel.get("pir"),
+            comparable=comparable,
+            better_ticker=better,
+            better_reason=reason,
+            as_of=d.get("as_of"),
+            raw=d,
+        )
+
+
+@dataclass
+class Holders:
+    """Institutional 13F ownership for a single fund (from the data CDN).
+
+    ``rows`` are the reporting institutions, each zipped from the ``fields``
+    column list into a dict for convenient access (e.g. ``row["firm_key"]``,
+    ``row["value_usd"]``).
+    """
+
+    ticker: str = ""
+    fund_name: str = ""
+    holder_firm_count: int = 0
+    holder_cik_count: int = 0
+    total_value_usd: Optional[int] = None
+    last_report_period: Optional[str] = None
+    summary: dict = field(default_factory=dict)
+    rows: List[dict] = field(default_factory=list)
+    raw: dict = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Holders":
+        fields = d.get("fields") or []
+        raw_rows = d.get("rows") or []
+        rows = [dict(zip(fields, r)) for r in raw_rows]
+        return cls(
+            ticker=d.get("ticker", ""),
+            fund_name=d.get("fund_name", ""),
+            holder_firm_count=d.get("holder_firm_count", 0),
+            holder_cik_count=d.get("holder_cik_count", 0),
+            total_value_usd=d.get("total_value_usd"),
+            last_report_period=d.get("last_report_period"),
+            summary=d.get("summary") or {},
+            rows=rows,
+            raw=d,
+        )
