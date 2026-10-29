@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "portfoliofuture"
+version = "0.1.0"
+description = "Python client for PortfolioFuture's public fund-substitution and investable return-decomposition API — answers 'what is this ETF?' and 'should I buy this fund?' with R², tracking error, and PIR"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+authors = [
+  { name = "Vince (Qijun) Chen, CFA", email = "chenqijunvc@gmail.com" }
+]
+keywords = [
+  "etf",
+  "mutual-funds",
+  "fund-substitution",
+  "fund-replacement",
+  "return-decomposition",
+  "investable-return",
+  "portfolio-management",
+  "quantitative-finance",
+  "factor-replication",
+  "probability-of-information-ratio",
+  "tracking-error",
+  "r-squared",
+  "should-i-buy-etf",
+  "what-is-etf",
+  "sec-13f",
+  "13f-holdings",
+  "portfoliofuture"
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: Office/Business :: Financial :: Investment",
+  "Intended Audience :: Financial and Insurance Industry",
+  "Intended Audience :: Science/Research",
+]
+dependencies = []
+
+[project.urls]
+"Homepage" = "https://portfoliofuture.com"
+"Documentation" = "https://portfoliofuture.com/methodology"
+"Fund Substitution" = "https://portfoliofuture.com/fund-opportunity"
+"Return Decomposition" = "https://portfoliofuture.com/fund-decomposition"
+"Fund Compare" = "https://portfoliofuture.com/fund-compare"
+"Institutional 13F Holders" = "https://portfoliofuture.com/fund-holders"
+"Sitemap Index" = "https://portfoliofuture.com/sitemap.xml"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["portfoliofuture*"]
+
+[tool.setuptools.package-data]
+portfoliofuture = ["py.typed"]
