@@ -3,9 +3,10 @@
 Every function performs a live HTTP call to ``https://portfoliofuture.com/api/*``
 and returns parsed, typed results. No data is bundled or fabricated.
 
-Public verbs are **opportunity** and **evaluate opportunity** (never
-"substitution"): find which funds a given fund can replace, and check whether
-two funds are comparable and which is better.
+Lead verbs are **opportunity** and **evaluate opportunity**: find which funds a
+given fund can replace, and check whether two funds are comparable and which is
+better. ``get_fund_substitution`` is the deliberate reverse view (which funds
+can replace a given one).
 """
 
 from .client import DEFAULT_BASE_URL, PortfolioFutureClient
@@ -20,6 +21,7 @@ from .api import (
     get_decomposition,
     get_peers,
     get_opportunity,
+    get_fund_substitution,
     evaluate_opportunity,
     get_returns,
     get_holders,
@@ -44,6 +46,7 @@ __all__ = [
     "get_decomposition",
     "get_peers",
     "get_opportunity",
+    "get_fund_substitution",
     "evaluate_opportunity",
     "get_returns",
     "get_holders",

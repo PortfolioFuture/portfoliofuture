@@ -74,6 +74,22 @@ class Decomposition:
             raw=d,
         )
 
+    @property
+    def replication_portfolio(self) -> List[Dict[str, Any]]:
+        """The replicating ETF basket as ``[{"ticker", "weight"}, ...]``.
+
+        Weights sorted descending — this is the low-cost, liquid ETF portfolio
+        that reproduces the fund's systematic return. The replication *results*
+        (R-squared, tracking error, information ratio, residual alpha) are the
+        metric attributes on this same object.
+        """
+        return [
+            {"ticker": t, "weight": w}
+            for t, w in sorted(
+                self.weights.items(), key=lambda kv: -(kv[1] or 0)
+            )
+        ]
+
 
 @dataclass
 class Peer:
@@ -109,6 +125,10 @@ class Peer:
     # (P(IR>0)). This is the score api.get_opportunity ranks by; the web platform
     # qualifies replacements at FSI > 80 (its 0-100 display, i.e. fsi > 0.80 here).
     fsi: Optional[float] = None
+    # The reverse direction (api.get_fund_substitution ranks by this): return
+    # similarity x the peer's own raw P(IR>0) over the target = how reliably
+    # THIS peer can replace the target. (``fsi`` asks the opposite question.)
+    replacement_score: Optional[float] = None
 
 
 @dataclass
@@ -154,6 +174,12 @@ class PeerCloud:
                 if sim is not None and tconv is not None
                 else None
             )
+            # Reverse view = similarity x raw pir (peer replaces target).
+            rep_val = (
+                round((sim or 0) * (pir or 0), 4)
+                if sim is not None and pir is not None
+                else None
+            )
             peers.append(Peer(
                 ticker=ticker,
                 name=pick("names", i) or "",
@@ -178,6 +204,7 @@ class PeerCloud:
                 shared_weeks=int(sw) if sw is not None else None,
                 target_conviction=tconv,
                 fsi=fsi_val,
+                replacement_score=rep_val,
             ))
         return cls(
             target=d.get("target", ""),

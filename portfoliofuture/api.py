@@ -5,13 +5,15 @@ for testing or pointing at a different deployment.
 
 Product framing note
 ---------------------
-The public verbs are **opportunity** and **evaluate opportunity**, never
-"substitution". ``get_opportunity`` answers "which funds can *this* fund
-replace?" (the challenger's upside), and ``evaluate_opportunity`` answers
-"are these two funds comparable, and which is better?" — both built on the
-live peer-cloud and head-to-head endpoints. The underlying research is the
-published fund-substitution / return-decomposition methodology; the surface
-language is opportunity because that is what an allocator acts on.
+The lead verbs are **opportunity** and **evaluate opportunity**:
+``get_opportunity`` answers "which funds can *this* fund replace?" (the
+challenger's upside) and ``evaluate_opportunity`` answers "are these two funds
+comparable, and which is better?" — both built on the live peer-cloud and
+head-to-head endpoints. ``get_fund_substitution`` is the deliberate reverse
+view ("which funds can replace *this* one" — the incumbent's risk view), kept
+as a secondary utility over the same peer cloud. The underlying research is
+the published fund-substitution / return-decomposition methodology; the lead
+surface language is opportunity because that is what an allocator acts on.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ def get_framework_info() -> dict:
             "decomposition": "/api/fund-dna/<ticker>",
             "peers": "/api/fund-peers/<ticker>",
             "opportunity": "/api/fund-peers/<ticker> (ranked for opportunity)",
+            "substitution": "/api/fund-peers/<ticker> (ranked for substitution — reverse)",
             "compare": "/api/etf-compare/<left>/<right>",
             "returns": "/api/etf/returns?tickers=<CSV>",
             "etf_profile": "/api/etf-profile/<ticker>",
@@ -67,11 +70,48 @@ def get_peers(ticker: str, base_url: Optional[str] = None) -> PeerCloud:
     return PeerCloud.from_dict(data)
 
 
+_VEHICLES = ("match", "etf", "mutual_fund", "all")
+
+
+def _normalize_vehicle(vehicle: str) -> str:
+    """Validate the vehicle filter before any network call (fail fast)."""
+    v = (vehicle or "match").strip().lower()
+    if v == "mf":
+        v = "mutual_fund"
+    if v not in _VEHICLES:
+        raise ValueError(
+            f'vehicle must be one of "match", "etf", "mutual_fund", "all" '
+            f"(got {vehicle!r})"
+        )
+    return v
+
+
+def _apply_vehicle(peers: List[Peer], cloud: PeerCloud, vehicle: str) -> List[Peer]:
+    """Filter peers by vehicle type.
+
+    ``"match"`` (default) keeps only the same vehicle type as the target fund
+    (ETF in -> ETF out, mutual fund in -> mutual fund out); ``"etf"`` /
+    ``"mutual_fund"`` force one type; ``"all"`` disables the filter.
+    """
+    v = _normalize_vehicle(vehicle)
+    if v == "all":
+        return peers
+    if v == "etf":
+        return [p for p in peers if not p.is_mutual_fund]
+    if v == "mutual_fund":
+        return [p for p in peers if p.is_mutual_fund]
+    target_is_mf = (cloud.target_fund or {}).get("is_mutual_fund")
+    if target_is_mf is None:
+        return peers
+    return [p for p in peers if p.is_mutual_fund == bool(target_is_mf)]
+
+
 def get_opportunity(
     ticker: str,
     top_n: int = 5,
     min_fsi: float = 0.0,
     min_similarity: float = 0.0,
+    vehicle: str = "match",
     cheaper_only: bool = False,
     base_url: Optional[str] = None,
 ) -> List[Peer]:
@@ -94,6 +134,10 @@ def get_opportunity(
         top_n: How many opportunity targets to return.
         min_fsi: Qualification line — drop peers below this FSI (0-1).
         min_similarity: Additionally require this return similarity (0-1).
+        vehicle: Vehicle-type filter — ``"match"`` (default) keeps the same
+            type as the input (ETF in -> ETF out, mutual fund in -> mutual
+            fund out); ``"etf"`` / ``"mutual_fund"`` force one type;
+            ``"all"`` disables the filter.
         cheaper_only: Optionally keep only peers whose expense ratio is higher
             than the target's (a cost tie-break, not the thesis).
 
@@ -101,9 +145,11 @@ def get_opportunity(
         A list of :class:`Peer` ranked by descending FSI — the strongest
         replacement (most similar AND most reliably beaten) first.
     """
+    v = _normalize_vehicle(vehicle)  # fail fast, before the network call
     cloud = get_peers(ticker, base_url=base_url)
     target_er = cloud.target_fund.get("expense_ratio")
     peers = [p for p in cloud.peers if p.ticker != ticker.upper()]
+    peers = _apply_vehicle(peers, cloud, v)
     if min_fsi > 0:
         peers = [p for p in peers if (p.fsi or 0) >= min_fsi]
     if min_similarity > 0:
@@ -114,6 +160,44 @@ def get_opportunity(
             if (p.expense_ratio is not None and target_er < p.expense_ratio)
         ]
     peers.sort(key=lambda p: (p.fsi or 0), reverse=True)
+    return peers[:top_n]
+
+
+def get_fund_substitution(
+    ticker: str,
+    top_n: int = 5,
+    min_similarity: float = 0.0,
+    vehicle: str = "match",
+    base_url: Optional[str] = None,
+) -> List[Peer]:
+    """Return the funds that can replace *this* fund — the reverse view.
+
+    The incumbent's risk view, the mirror image of :func:`get_opportunity`:
+    you hold ``ticker`` and want to know which other funds qualify to displace
+    it. Ranked by ``replacement_score`` = return similarity × the peer's own
+    raw P(IR>0) over the target (no inversion — the peer's edge is used
+    directly). ``get_opportunity`` ranks by ``fsi`` (the target's edge over
+    the peer); this call ranks by the peer's edge over the target.
+
+    Args:
+        ticker: The fund you hold and are evaluating for replacement risk.
+        top_n: How many replacement candidates to return.
+        min_similarity: Additionally require this return similarity (0-1).
+        vehicle: Vehicle-type filter — ``"match"`` (default) keeps the same
+            type as the input; ``"etf"`` / ``"mutual_fund"`` force one type;
+            ``"all"`` disables the filter.
+
+    Returns:
+        A list of :class:`Peer` ranked by descending ``replacement_score`` —
+        the funds most able to replace this one first.
+    """
+    v = _normalize_vehicle(vehicle)  # fail fast, before the network call
+    cloud = get_peers(ticker, base_url=base_url)
+    peers = [p for p in cloud.peers if p.ticker != ticker.upper()]
+    peers = _apply_vehicle(peers, cloud, v)
+    if min_similarity > 0:
+        peers = [p for p in peers if (p.similarity or 0) >= min_similarity]
+    peers.sort(key=lambda p: (p.replacement_score or 0), reverse=True)
     return peers[:top_n]
 
 

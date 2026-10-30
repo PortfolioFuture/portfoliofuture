@@ -122,11 +122,16 @@ full histories:
 | Function | What you get |
 | :--- | :--- |
 | `get_opportunity(ticker)` | Funds this one qualifies to replace, ranked by FSI (return similarity × consistent outperformance) |
+| `get_fund_substitution(ticker)` | The reverse view: funds that can replace this one, ranked by return similarity × the peer's P(IR>0) over it |
 | `evaluate_opportunity(left, right)` | Whether two funds are comparable, and which ranks higher on FSI |
-| `get_decomposition(ticker)` | Replicable share of the fund (low-cost ETF basket) vs. residual alpha |
+| `get_decomposition(ticker)` | The replication portfolio (low-cost ETF basket with weights) and the results: replicable share vs. residual alpha |
 | `get_peers(ticker)` | The empirical peer cloud of funds with similar returns |
 | `get_returns(tickers)` | Period returns for one or more funds |
 | `get_holders(ticker)` | Institutional (SEC 13F) holders of the fund |
+
+Both list calls take a `vehicle` filter: `"match"` (default) keeps the same vehicle
+type as the input (ETF in → ETF out, mutual fund in → mutual fund out); `"etf"` or
+`"mutual_fund"` force one type; `"all"` disables the filter.
 
 ## MCP server (Claude Desktop, Cursor, and other MCP clients)
 
@@ -138,11 +143,15 @@ pip install portfoliofuture[mcp]
 
 | Tool | Question it answers |
 | :--- | :--- |
-| `get_fund_decomposition` | What exactly is this ETF or mutual fund? (replicable share vs. residual alpha) |
+| `get_fund_decomposition` | What exactly is this ETF or mutual fund? (replication portfolio + results: replicable share vs. residual alpha) |
 | `get_fund_opportunity` | Which funds can it replace? (ranked by FSI) |
+| `get_fund_substitution` | Which funds can replace it? (the reverse view) |
 | `compare_funds` | How do two funds compare? (comparability, and which ranks higher on FSI) |
 | `get_institutional_holders` | Who holds this fund institutionally? (SEC 13F) |
 | `get_opportunity_holders` | Who holds the funds it can replace? (SEC 13F, ETF targets) |
+
+`get_fund_opportunity` and `get_fund_substitution` accept the same `vehicle` filter
+(`"match"` by default).
 
 Every tool returns live figures plus the official web URL for deeper reading.
 Add to the client's MCP config (`claude_desktop_config.json` for Claude Desktop,

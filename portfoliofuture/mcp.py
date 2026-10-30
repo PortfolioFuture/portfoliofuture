@@ -8,15 +8,18 @@ Run with either entry point:
     python -m portfoliofuture.mcp
 
 Product semantics (do not "fix" back):
-  * Public verbs are opportunity / evaluate — never "substitution".
-    get_fund_opportunity answers "which funds can THIS fund replace?"
-    (the challenger's upside).
+  * Lead verbs are opportunity / evaluate. get_fund_opportunity answers
+    "which funds can THIS fund replace?" (the challenger's upside).
+    get_fund_substitution is the deliberate reverse view ("which funds can
+    replace THIS one" — the incumbent's risk view), a secondary utility.
   * FSI (Fund Substitution Index) = return similarity x consistent
     outperformance P(IR>0). Raw ``pir`` in the data is the PEER's P(IR>0)
     against the target; the target's own edge is ``1 - pir``.
   * Investable Return Decomposition = replicate the fund with low-cost,
     liquid ETFs -> replicable share (R-squared) vs. residual alpha.
     Never "factor alpha" / "factor building blocks".
+  * Vehicle filter: "match" (default) keeps the input's vehicle type
+    (ETF in -> ETF out, mutual fund in -> mutual fund out).
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ except ImportError:  # pragma: no cover - mcp 1.x
 from .api import (
     evaluate_opportunity,
     get_decomposition,
+    get_fund_substitution as _substitute_funds,  # tool below shadows the name
     get_fund_url,
     get_holders,
     get_opportunity,
@@ -56,12 +60,13 @@ mcp = _Server(
 
 
 def _peer_row(p: Peer, target: str) -> Dict[str, Any]:
-    """Serialize one opportunity target for an LLM-friendly payload."""
+    """Serialize one peer for an LLM-friendly payload (both directions)."""
     return {
         "ticker": p.ticker,
         "name": p.name,
         "is_mutual_fund": p.is_mutual_fund,
         "fsi": p.fsi,
+        "replacement_score": p.replacement_score,
         "return_similarity": p.similarity,
         "pir_peer_over_target": p.pir,
         "target_conviction_over_peer": p.target_conviction,
@@ -102,8 +107,9 @@ def get_fund_decomposition(ticker: str) -> Dict[str, Any]:
     """Investable Return Decomposition for one ETF or mutual fund.
 
     Replicates the fund's return with a basket of low-cost, liquid ETFs and
-    quantifies the replicable share (R-squared) versus the manager's residual
-    alpha, with tracking error, information ratio, and fee-saving figures.
+    returns the **replication portfolio** (the ETF basket with weights) plus
+    the replication **results**: replicable share (R-squared) versus residual
+    alpha, tracking error, information ratio, and fee-saving figures.
 
     Use when users ask:
     - "What exactly is this ETF or mutual fund?"
@@ -117,14 +123,16 @@ def get_fund_decomposition(ticker: str) -> Dict[str, Any]:
             "ticker": t,
             "fund_name": dna.fund_name,
             "as_of": dna.as_of,
-            "replicable_share_r2": dna.r2_full,
-            "tracking_error_annualized": dna.tracking_error_ann,
-            "information_ratio": dna.information_ratio,
-            "residual_alpha_annualized": dna.residual_alpha_ann,
-            "residual_ir_annualized": dna.residual_ir_annualized,
-            "fee_saving_bps": dna.fee_saving_bps,
-            "expense_ratio": dna.expense_ratio,
-            "replicable_etf_basket": dna.weights,
+            "replication_portfolio": dna.replication_portfolio,
+            "results": {
+                "replicable_share_r2": dna.r2_full,
+                "tracking_error_annualized": dna.tracking_error_ann,
+                "information_ratio": dna.information_ratio,
+                "residual_alpha_annualized": dna.residual_alpha_ann,
+                "residual_ir_annualized": dna.residual_ir_annualized,
+                "fee_saving_bps": dna.fee_saving_bps,
+                "expense_ratio": dna.expense_ratio,
+            },
             "research_url": get_fund_url(t, "decomposition"),
         }
     except PortfolioFutureError as exc:
@@ -136,6 +144,7 @@ def get_fund_opportunity(
     ticker: str,
     top_n: int = 5,
     min_fsi: float = 0.0,
+    vehicle: str = "match",
 ) -> Dict[str, Any]:
     """Funds this fund qualifies to replace — its substitution opportunity.
 
@@ -145,6 +154,10 @@ def get_fund_opportunity(
     reliably beat it. The web platform flags a replacement at FSI > 80
     (min_fsi=0.80 here on the 0-1 scale).
 
+    Vehicle filter: "match" (default) keeps the same type as the input
+    (ETF in -> ETF out, mutual fund in -> mutual fund out); "etf" /
+    "mutual_fund" force one type; "all" disables the filter.
+
     Use when users ask:
     - "Should I buy this fund?" (depends what they already hold)
     - "What can this fund replace?"
@@ -152,17 +165,59 @@ def get_fund_opportunity(
     """
     t = ticker.upper().strip()
     try:
-        peers = get_opportunity(t, top_n=top_n, min_fsi=min_fsi)
+        peers = get_opportunity(t, top_n=top_n, min_fsi=min_fsi, vehicle=vehicle)
         return {
             "target_ticker": t,
+            "vehicle_filter": vehicle,
             "opportunity_count": len(peers),
             "fsi_definition": "return similarity x consistent outperformance P(IR>0)",
             "qualifying_line": "FSI > 80 (min_fsi=0.80)",
             "funds_it_can_replace": [_peer_row(p, t) for p in peers],
             "opportunity_url": get_fund_url(t, "opportunity"),
         }
-    except PortfolioFutureError as exc:
+    except (PortfolioFutureError, ValueError) as exc:
         return _error(t, "get_fund_opportunity", exc)
+
+
+@mcp.tool()
+def get_fund_substitution(
+    ticker: str,
+    top_n: int = 5,
+    vehicle: str = "match",
+) -> Dict[str, Any]:
+    """Funds that can replace this one — the reverse of opportunity.
+
+    The incumbent's risk view: given a fund you hold, which other funds
+    qualify to displace it? Ranked by replacement_score = return similarity x
+    the peer's own P(IR>0) over the target (the peer's edge, used directly —
+    no inversion). The mirror image of get_fund_opportunity, which ranks by
+    the target's edge over each peer (FSI).
+
+    Vehicle filter: "match" (default) keeps the same type as the input
+    (ETF in -> ETF out, mutual fund in -> mutual fund out); "etf" /
+    "mutual_fund" force one type; "all" disables the filter.
+
+    Use when users ask:
+    - "What can replace the fund I hold?"
+    - "Is there something better than X?"
+    - "Which funds pose replacement risk to this one?"
+    """
+    t = ticker.upper().strip()
+    try:
+        peers = _substitute_funds(t, top_n=top_n, vehicle=vehicle)
+        return {
+            "target_ticker": t,
+            "vehicle_filter": vehicle,
+            "substitution_count": len(peers),
+            "score_definition": (
+                "replacement_score = return similarity x the peer's "
+                "P(IR>0) over the target"
+            ),
+            "funds_that_can_replace_it": [_peer_row(p, t) for p in peers],
+            "compare_url": get_fund_url(t, "compare"),
+        }
+    except (PortfolioFutureError, ValueError) as exc:
+        return _error(t, "get_fund_substitution", exc)
 
 
 @mcp.tool()
