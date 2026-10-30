@@ -71,37 +71,50 @@ def get_opportunity(
     ticker: str,
     top_n: int = 5,
     min_similarity: float = 0.0,
+    min_conviction: float = 0.0,
     cheaper_only: bool = False,
     base_url: Optional[str] = None,
 ) -> List[Peer]:
-    """Return the funds that *this* fund can replace — its empirical opportunity.
+    """Return the funds that *this* fund can replace — its opportunity.
 
-    Ranked by descending similarity. This is the challenger's view: you hold or
-    research ``ticker``, and the result tells you which incumbent funds it can
-    displace (e.g. a cheaper, equally-correlated share class).
+    Framing is the challenger's upside: you hold or research ``ticker``, and the
+    result tells you which incumbent funds it qualifies to displace.
+
+    How a fund qualifies: it must move like the target (return similarity) *and*
+    the target must reliably beat it. The API's raw ``pir`` is the peer's
+    P(IR>0) **against** the target (how reliably the *peer* wins); the target's
+    own edge is the inverse — ``target_conviction = 1 - pir``. Each :class:`Peer`
+    exposes ``similarity``, ``pir`` (raw), ``target_conviction = 1 - pir``, and
+    ``substitution_strength = similarity × target_conviction``, which is what this
+    call ranks by. (``substitution_strength`` is a transparent product of the two
+    qualification signals, not the platform's proprietary index.)
 
     Args:
         ticker: The fund you are evaluating as the challenger.
         top_n: How many opportunity targets to return.
-        min_similarity: Drop peers below this correlation (0-1).
-        cheaper_only: Keep only peers where ``ticker`` itself has the lower
-            expense ratio — i.e. a genuine cost-arbitrage opportunity.
+        min_similarity: Drop peers below this return similarity (0-1).
+        min_conviction: Drop peers below this — the target's own probability of
+            outperforming the peer, i.e. ``1 - pir`` (0-1).
+        cheaper_only: Optionally keep only peers whose expense ratio is higher
+            than the target's (a cost tie-break, not the thesis).
 
     Returns:
-        A list of :class:`Peer` ranked from the highest-correlation, most
-        directly replaceable incumbent downward.
+        A list of :class:`Peer` ranked from the strongest replacement
+        (highest similarity × target conviction) downward.
     """
     cloud = get_peers(ticker, base_url=base_url)
     target_er = cloud.target_fund.get("expense_ratio")
     peers = [p for p in cloud.peers if p.ticker != ticker.upper()]
     if min_similarity > 0:
         peers = [p for p in peers if (p.similarity or 0) >= min_similarity]
+    if min_conviction > 0:
+        peers = [p for p in peers if (p.target_conviction or 0) >= min_conviction]
     if cheaper_only and target_er is not None:
         peers = [
             p for p in peers
             if (p.expense_ratio is not None and target_er < p.expense_ratio)
         ]
-    peers.sort(key=lambda p: (p.similarity or 0), reverse=True)
+    peers.sort(key=lambda p: (p.substitution_strength or 0), reverse=True)
     return peers[:top_n]
 
 

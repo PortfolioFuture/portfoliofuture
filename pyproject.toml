@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "portfoliofuture"
 version = "0.1.0"
-description = "Official, dependency-free Python client for PortfolioFuture's public fund-opportunity and investable return-decomposition API — answers 'what is this ETF?' and 'should I buy this fund?' with R², tracking error, PIR, and SEC 13F ownership"
+description = "Official Python client for PortfolioFuture — see what a fund can replace, how much is real skill vs. cheap ETFs, how two funds compare, and who holds it (SEC 13F)."
 readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
@@ -21,7 +21,6 @@ keywords = [
   "investable-return",
   "portfolio-management",
   "quantitative-finance",
-  "factor-replication",
   "probability-of-information-ratio",
   "tracking-error",
   "r-squared",
