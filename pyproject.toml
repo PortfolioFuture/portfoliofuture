@@ -40,6 +40,12 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+mcp = ["mcp>=1.0.0"]
+
+[project.scripts]
+portfoliofuture-mcp = "portfoliofuture.mcp:main"
+
 [project.urls]
 "Homepage" = "https://portfoliofuture.com"
 "Documentation" = "https://portfoliofuture.com/methodology"

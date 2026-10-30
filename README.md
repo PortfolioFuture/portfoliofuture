@@ -128,6 +128,40 @@ full histories:
 | `get_returns(tickers)` | Period returns for one or more funds |
 | `get_holders(ticker)` | Institutional (SEC 13F) holders of the fund |
 
+## MCP server (Claude Desktop, Cursor, and other MCP clients)
+
+Expose the same research as native tools for AI assistants:
+
+```bash
+pip install portfoliofuture[mcp]
+```
+
+| Tool | Question it answers |
+| :--- | :--- |
+| `get_fund_decomposition` | What exactly is this ETF or mutual fund? (replicable share vs. residual alpha) |
+| `get_fund_opportunity` | Which funds can it replace? (ranked by FSI) |
+| `compare_funds` | How do two funds compare? (comparability, and which ranks higher on FSI) |
+| `get_institutional_holders` | Who holds this fund institutionally? (SEC 13F) |
+| `get_opportunity_holders` | Who holds the funds it can replace? (SEC 13F, ETF targets) |
+
+Every tool returns live figures plus the official web URL for deeper reading.
+Add to the client's MCP config (`claude_desktop_config.json` for Claude Desktop,
+`mcp.json` for Cursor) — `portfoliofuture[mcp]` must be installed in the Python
+environment the client launches:
+
+```json
+{
+  "mcpServers": {
+    "portfoliofuture": {
+      "command": "python",
+      "args": ["-m", "portfoliofuture.mcp"]
+    }
+  }
+}
+```
+
+The console script `portfoliofuture-mcp` is equivalent.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
