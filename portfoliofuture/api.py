@@ -70,8 +70,8 @@ def get_peers(ticker: str, base_url: Optional[str] = None) -> PeerCloud:
 def get_opportunity(
     ticker: str,
     top_n: int = 5,
+    min_fsi: float = 0.0,
     min_similarity: float = 0.0,
-    min_conviction: float = 0.0,
     cheaper_only: bool = False,
     base_url: Optional[str] = None,
 ) -> List[Peer]:
@@ -80,41 +80,40 @@ def get_opportunity(
     Framing is the challenger's upside: you hold or research ``ticker``, and the
     result tells you which incumbent funds it qualifies to displace.
 
-    How a fund qualifies: it must move like the target (return similarity) *and*
-    the target must reliably beat it. The API's raw ``pir`` is the peer's
-    P(IR>0) **against** the target (how reliably the *peer* wins); the target's
-    own edge is the inverse — ``target_conviction = 1 - pir``. Each :class:`Peer`
-    exposes ``similarity``, ``pir`` (raw), ``target_conviction = 1 - pir``, and
-    ``substitution_strength = similarity × target_conviction``, which is what this
-    call ranks by. (``substitution_strength`` is a transparent product of the two
-    qualification signals, not the platform's proprietary index.)
+    Qualification is **FSI (Fund Substitution Index)** — return similarity ×
+    consistent outperformance of the target over the peer (P(IR>0)). The API's
+    raw ``pir`` is the peer's P(IR>0) **against** the target; ``1 − pir`` is the
+    target's own edge, so ``fsi = similarity × target_conviction``. Each
+    :class:`Peer` exposes ``similarity``, ``pir`` (raw), ``target_conviction =
+    1 - pir``, and ``fsi`` — this call ranks by ``fsi``. The web platform
+    qualifies replacements at FSI > 80 (its 0-100 display), i.e.
+    ``min_fsi=0.80`` here.
 
     Args:
         ticker: The fund you are evaluating as the challenger.
         top_n: How many opportunity targets to return.
-        min_similarity: Drop peers below this return similarity (0-1).
-        min_conviction: Drop peers below this — the target's own probability of
-            outperforming the peer, i.e. ``1 - pir`` (0-1).
+        min_fsi: Qualification line — drop peers below this FSI (0-1).
+        min_similarity: Additionally require this return similarity (0-1).
         cheaper_only: Optionally keep only peers whose expense ratio is higher
             than the target's (a cost tie-break, not the thesis).
 
     Returns:
-        A list of :class:`Peer` ranked from the strongest replacement
-        (highest similarity × target conviction) downward.
+        A list of :class:`Peer` ranked by descending FSI — the strongest
+        replacement (most similar AND most reliably beaten) first.
     """
     cloud = get_peers(ticker, base_url=base_url)
     target_er = cloud.target_fund.get("expense_ratio")
     peers = [p for p in cloud.peers if p.ticker != ticker.upper()]
+    if min_fsi > 0:
+        peers = [p for p in peers if (p.fsi or 0) >= min_fsi]
     if min_similarity > 0:
         peers = [p for p in peers if (p.similarity or 0) >= min_similarity]
-    if min_conviction > 0:
-        peers = [p for p in peers if (p.target_conviction or 0) >= min_conviction]
     if cheaper_only and target_er is not None:
         peers = [
             p for p in peers
             if (p.expense_ratio is not None and target_er < p.expense_ratio)
         ]
-    peers.sort(key=lambda p: (p.substitution_strength or 0), reverse=True)
+    peers.sort(key=lambda p: (p.fsi or 0), reverse=True)
     return peers[:top_n]
 
 
@@ -126,16 +125,19 @@ def evaluate_opportunity(
     """Evaluate whether two funds are comparable and which is better.
 
     Calls the live head-to-head endpoint and returns a :class:`Comparison`
-    with the empirical similarity, plus a ``comparable`` flag and, when the two
-    funds track the same exposure, a ``better_ticker`` picked on cost.
+    with the empirical similarity, a ``comparable`` flag, and — when the two
+    funds move together — a ``better_ticker`` picked on **FSI** (Fund
+    Substitution Index — return similarity × consistent outperformance): the
+    higher FSI ranks as better. Both directions are scored (``fsi_left``,
+    ``fsi_right``).
 
     Args:
         left: Ticker of the fund you hold or are comparing from.
         right: Ticker of the fund you are comparing against.
 
     Returns:
-        A :class:`Comparison` (similarity, correlation, PIR, comparable flag,
-        and the lower-cost ticker when comparable).
+        A :class:`Comparison` (similarity, correlation, PIR, FSI both ways,
+        comparable flag, and the higher-FSI ticker when comparable).
     """
     data = _client(base_url).etf_compare(left, right)
     return Comparison.from_dict(data)

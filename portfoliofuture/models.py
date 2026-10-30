@@ -102,12 +102,13 @@ class Peer:
     shared_weeks: Optional[int] = None
     # `pir` (raw, straight from the API) is the OPPONENT/peer's P(IR>0) against the
     # target — how reliably THIS peer outperforms the target. The target's own
-    # consistent outperformance over the peer is the inverse: target_conviction = 1 - pir.
+    # edge over the peer is the inverse: target_conviction = 1 - pir.
     target_conviction: Optional[float] = None
-    # FSI = return similarity + consistent outperformance (P(IR>0)). substitution_strength
-    # is the transparent product similarity × target_conviction (not the platform's
-    # proprietary index); see api.get_opportunity.
-    substitution_strength: Optional[float] = None
+    # FSI (Fund Substitution Index) = return similarity x (1 - pir):
+    # return similarity x consistent outperformance of the target over THIS peer
+    # (P(IR>0)). This is the score api.get_opportunity ranks by; the web platform
+    # qualifies replacements at FSI > 80 (its 0-100 display, i.e. fsi > 0.80 here).
+    fsi: Optional[float] = None
 
 
 @dataclass
@@ -147,7 +148,8 @@ class PeerCloud:
             pir = pick("pir", i)
             # `pir` is opponent/peer-over-target; invert for the target's own conviction.
             tconv = round(1 - pir, 4) if pir is not None else None
-            ss = (
+            # FSI = return similarity x (1 - pir)
+            fsi_val = (
                 round((sim or 0) * tconv, 4)
                 if sim is not None and tconv is not None
                 else None
@@ -175,7 +177,7 @@ class PeerCloud:
                 win_average=pick("win_average", i),
                 shared_weeks=int(sw) if sw is not None else None,
                 target_conviction=tconv,
-                substitution_strength=ss,
+                fsi=fsi_val,
             ))
         return cls(
             target=d.get("target", ""),
@@ -192,9 +194,15 @@ class Comparison:
     """Pairwise fund comparison — the *evaluate opportunity* call.
 
     Built from ``/api/etf-compare/<left>/<right>``. Reports whether the two
-    funds move together (similarity) and, when they do, which one reliably
-    beats the other. ``left`` is the fund you are evaluating (the challenger),
-    ``right`` is the fund you hold today.
+    funds move together (similarity) and, when they do, which one is better.
+    ``left`` is the fund you are evaluating (the challenger), ``right`` is the
+    fund you hold today.
+
+    "Better" is decided by **FSI (Fund Substitution Index)** — the same score
+    used for opportunity: return similarity × consistent outperformance,
+    ``FSI = similarity x (1 - pir)``. Both directions are scored (``fsi_left`` =
+    left replaces right, ``fsi_right`` = right replaces left) and the higher FSI
+    ranks as better.
 
     The API's raw ``pir`` is the opponent's (right's) P(IR>0) against the target
     (left) — how reliably RIGHT beats LEFT. The target's own edge is the inverse:
@@ -211,6 +219,8 @@ class Comparison:
     tracking_error_ann: Optional[float] = None
     pir: Optional[float] = None                 # raw: opponent(right)-over-target(left)
     target_conviction: Optional[float] = None   # = 1 - pir: how reliably left beats right
+    fsi_left: Optional[float] = None            # similarity x (1 - pir): left replaces right
+    fsi_right: Optional[float] = None           # similarity x pir: right replaces left
     left_expense_ratio: Optional[float] = None
     right_expense_ratio: Optional[float] = None
     comparable: bool = False
@@ -227,20 +237,37 @@ class Comparison:
         similarity = rel.get("similarity")
         pir = rel.get("pir")  # raw: opponent(right)-over-target(left)
         tconv = (1 - pir) if pir is not None else None  # how reliably left beats right
+        # FSI both ways: similarity is shared, conviction flips with direction.
+        fsi_left = (
+            round(similarity * tconv, 4)
+            if similarity is not None and tconv is not None
+            else None
+        )
+        fsi_right = (
+            round(similarity * pir, 4)
+            if similarity is not None and pir is not None
+            else None
+        )
         left_er = left.get("expense_ratio")
         right_er = right.get("expense_ratio")
         comparable = (similarity or 0) >= 0.95
         better = None
         reason = None
-        if comparable and tconv is not None:
-            if tconv > 0.5:
+        if comparable and fsi_left is not None and fsi_right is not None:
+            if fsi_left > fsi_right:
                 better = left.get("ticker")
-                reason = f"{left.get('ticker')} reliably outperforms {right.get('ticker')} (P={tconv:.3f})"
-            elif tconv < 0.5:
+                reason = (
+                    f"higher FSI ({fsi_left:.3f} vs {fsi_right:.3f}) — "
+                    f"return similarity with consistent outperformance"
+                )
+            elif fsi_right > fsi_left:
                 better = right.get("ticker")
-                reason = f"{right.get('ticker')} reliably outperforms {left.get('ticker')} (P={1 - tconv:.3f})"
+                reason = (
+                    f"higher FSI ({fsi_right:.3f} vs {fsi_left:.3f}) — "
+                    f"return similarity with consistent outperformance"
+                )
             else:
-                reason = "no reliable outperformance edge either way"
+                reason = "equal FSI — no outperformance edge either way"
         return cls(
             left_ticker=left.get("ticker", ""),
             right_ticker=right.get("ticker", ""),
@@ -252,6 +279,8 @@ class Comparison:
             tracking_error_ann=rel.get("tracking_error_ann"),
             pir=pir,
             target_conviction=tconv,
+            fsi_left=fsi_left,
+            fsi_right=fsi_right,
             left_expense_ratio=left_er,
             right_expense_ratio=right_er,
             comparable=comparable,
